@@ -1119,6 +1119,8 @@ std::vector<std::pair<vid_t, vid_t> > interval;
 int msbfsMain(int argc, const char ** argv) {
 	//get the id range of the giant-SCC [start, end)
 	std::vector<std::pair<vid_t, vid_t> > range = DAGmain(argc, argv);	
+	bool left_empty = false;
+	bool right_empty = false;
 	assert((int)range.size() == 3);
 	std::cout<<"DAG finished!============================"<<std::endl;
 	startvid =	range[1].first; 
@@ -1130,7 +1132,7 @@ int msbfsMain(int argc, const char ** argv) {
     
     /* Metrics object for keeping track of performance counters
        and other information. Currently required. */
-    metrics m("SCC-msBFS");
+    metrics m("giantSCC-msBFS");
     
     /* Basic arguments for application */
     std::string filename = get_option_string("file");  // Base filename
@@ -1145,8 +1147,20 @@ int msbfsMain(int argc, const char ** argv) {
 	stop_ratio			 = (double)get_option_float("stopratio", 0.1);	
 	//numPartitions	     = get_option_int("");
 	
-	//exclude left and right part of the DAG	
-	num_par = num_par-2;
+	//exclude left and right part of the Graph	
+	//check left part is empty!
+	if(range[0].first < range[0].second){
+		num_par = num_par-1;
+	}else{
+		left_empty = true;	
+	}
+	
+	//check if right part is empty
+	if(range[2].first < range[2].second){
+		num_par = num_par-1;
+	}else{
+		right_empty = true;		
+	}
 	assert(num_par > 0);
 	max_iterations = MAX_LEVEL;
    	//single_source = get_option_int("root", 0); 
@@ -1334,7 +1348,8 @@ int msbfsMain(int argc, const char ** argv) {
 	//FILE* finterval = fopen((orig_filename+".dag.interval").c_str(), "w+");
 	//interval.resize(num_par+2);
 	//vertex id range of the left part of the DAG
-	interval.push_back(std::pair<vid_t, vid_t>(range[0].first, range[0].second-1));	
+	if(!left_empty)	
+		interval.push_back(std::pair<vid_t, vid_t>(range[0].first, range[0].second-1));	
 
 	//calculate the vertex id range of each block			
 	newid.resize(collect_result.size());	
@@ -1351,7 +1366,8 @@ int msbfsMain(int argc, const char ** argv) {
 	}
 	assert(endvid == startvid);	
 	//vertex id range of the right part of DAG
-	interval.push_back(std::pair<vid_t, vid_t>(range[2].first, range[2].second-1));
+	if(!right_empty)
+		interval.push_back(std::pair<vid_t, vid_t>(range[2].first, range[2].second-1));
 
 	std::cout<<"---------------ReMap is started-------------------"<<std::endl;
 	//open vertex map file for appending	
