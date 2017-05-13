@@ -15,7 +15,8 @@ using namespace graphchi;
 struct bidirectional_label {
     vid_t smaller_one;
     vid_t larger_one;
-    
+	//float weight;   	
+ 
    	bool is_equal(){
 		 assert(larger_one != 0xffffffffu);
         assert(smaller_one != 0xffffffffu);
@@ -100,10 +101,21 @@ bool operator!=(const SCCinfo &a, const SCCinfo &b) {
     return a.color != b.color;
 }
 
+//bool flag_weight;
+
 typedef SCCinfo VDataType;
 typedef bidirectional_label EDataType;
 
+//bool flag_weight = false;
 
+//static void VARIABLE_IS_NOT_USED parse<EdgeDataType>(EdgeDataType& edata, const char* s){
+static void  parse(EDataType& edata, const char* s){
+	/*
+	if(!flag_weight) flag_weight = true;
+	edata.weight = atof(s);	
+	*/
+	return;
+}
 bool first_iteration = true;
 bool remainingvertices = true;
 //bool scheduler = false;
@@ -482,7 +494,7 @@ std::vector<std::pair<vid_t, vid_t> > DAGmain(int argc, const char ** argv) {
 	int niters = get_option_int("niters", 1000);
     /* Run */
     fpout = fopen((filename+".bigscc").c_str(), "w+"); 
-    vmap = fopen((filename+".vmap").c_str(), "w+"); 
+    vmap = fopen((filename+".dag.vmap").c_str(), "w+"); 
 
 	assert(fpout != NULL);
 	assert(vmap != NULL);

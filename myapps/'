@@ -31,12 +31,12 @@
 #include <fstream>
 #include <cmath>
 
-#define GRAPHCHI_DISABLE_COMPRESSION
+//#define GRAPHCHI_DISABLE_COMPRESSION
 
 
 #include "graphchi_basic_includes.hpp"
 #include "util/toplist.hpp"
-
+#include "MSBFS.cpp"
 using namespace graphchi;
  
 #define THRESHOLD 1e-2    
@@ -51,7 +51,6 @@ struct EdgeInfo{
 	vid_t largelabel;
 	vid_t smalllabel;   
 	float weight;
-	
 	vid_t& my_label(vid_t myid, vid_t nbid){
 		if(myid < nbid) return smalllabel;	
 		else return largelabel;
@@ -65,6 +64,18 @@ struct EdgeInfo{
 	}
 };
 
+typedef vid_t VType;
+typedef EdgeInfo EType;
+
+bool flag_weight = false;
+//static void VARIABLE_IS_NOT_USED parse<EdgeDataType>(EdgeDataType& edata, const char* s){
+static void  parse(EdgeInfo& edata, const char* s){
+	if(!flag_weight){
+		flag_weight = true;
+		std::cout<<"edata with weight"<<std::endl;
+	}
+	edata.weight = atof(s);	
+}
 /*
 bool sortFunc(const VertexInfo& v1, const VertexInfo& v2){
 	if(v1.deg < v2.deg){
@@ -77,37 +88,26 @@ bool sortFunc(const VertexInfo& v1, const VertexInfo& v2){
 	}	
 }
 */
-typedef vid_t VertexDataType;
-typedef EdgeInfo EdgeDataType;
-bool flag_weight = false;
 
-//static void VARIABLE_IS_NOT_USED parse<EdgeDataType>(EdgeDataType& edata, const char* s){
-static void  parse(EdgeDataType& edata, const char* s){
-	if(!flag_weight) flag_weight = true;
-	edata.weight = atof(s);	
-}
 //mutex lock;
 FILE* fp_list = NULL;
-FILE* fp_interval = NULL;
-FILE* fp_vmap = NULL;
 //FILE* fp_vt = NULL;
-float epsilon = 0.001;
+//float epsilon = 0.001;
 //int* array = NULL;
-bool scheduler;
 size_t num_vertices = 0;
 
 //vid_t start_id = 1;
 //vid_t start_id_vld = 1;
 size_t num_edges = 0;
 //vid_t num_vertices = 0;
-mutex lock;
 //bool flag = false;//denote whether the smallest vid is 0 or 1
 //bool num_tasks_print = false;
 
-std::vector<vid_t> idmap;
-std::vector<vid_t> vnumbers;
-std::vector<vid_t> intv;
+//std::vector<vid_t> idmap;
+//std::vector<vid_t> vnumbers;
+vid_t* idmap = NULL;
 std::string pfilename = ""; 
+
 void fixline(char* str){
 	if(str == NULL) return;
 	int len = strlen(str);
@@ -116,54 +116,62 @@ void fixline(char* str){
 }
 
 void initIdMap(){
-	idmap.resize(num_vertices);
+	//idmap.resize(num_vertices);
+	assert(num_vertices > 0);
+	idmap = (vid_t*)malloc(sizeof(vid_t)*num_vertices);
+	memset(idmap, 0, sizeof(vid_t)*num_vertices);
+
 	FILE* fpp = fopen(pfilename.c_str(), "r");			
 	assert(fpp != NULL);
 	char buffer[1024];
-	int count = 0;
-	int sum = 0;
+	char delimiter[] = "\t ,";
+	//int count = 0;
+	//int sum = 0;
 	while(fgets(buffer, 1024, fpp) != NULL){
 		fixline(buffer);	
-		int partid = atoi(buffer);	
-		idmap[count++] = partid;	
-		if(partid+1 > (int)vnumbers.size()) {
-			vnumbers.resize(partid+1);	
-			vnumbers[partid] = 1;
-		}else{
-			vnumbers[partid]++;
-		}
+		if(buffer[0] == '#'|| buffer[0] == '%') continue;
+		char* str = strtok(buffer, delimiter);		
+		int old_vid = atoi(str);	
+		
+		str = strtok(NULL, delimiter); 
+		int new_vid = atoi(str);
+
+		assert(old_vid < num_vertices && new_vid < num_vertices);	
+		assert(idmap[old_vid] == 0);
+		idmap[old_vid] = (vid_t)new_vid;	
 	}
+
+	/*
 	for(int i=0; i<(int)vnumbers.size(); i++){
 		std::cout<<i<<"-th partition size="<<vnumbers[i]<<std::endl;
 	}
-
+	
 	for(int i=0; i<(int)vnumbers.size(); i++){
 		int tmp = sum;			
 		sum += vnumbers[i];
 		vnumbers[i] = tmp;
 	}	
-	//std::cout<<"sum = "<<sum<<std::endl;
-	//vnumbers store the start id of each partition
 	for(int i=0; i<vnumbers.size(); i++){
-		int end = i+1 < vnumbers.size() ? vnumbers[i+1]-1 : sum;
-		int start = vnumbers[i];
-		std::cout<<i<<"-th partition start vid="<<start<<" end vid="<<end<<std::endl;
-		intv.push_back(start);
-		intv.push_back(end);
-		//std::cout<<"fprint start"<<std::endl;
-		fprintf(fp_interval, "%d\t%d\n", start, end);
-		//std::cout<<"fpirntf end"<<std::endl;
+		std::cout<<i<<"-th partition start vid="<<vnumbers[i]<<std::endl;
 	}
-	fflush(fp_interval);
+	*/
 	fclose(fpp);
 	fpp = NULL;
 }
 
+vid_t getNewId(vid_t vid){
+	assert(vid < num_vertices);
+	return idmap[vid];
+}
+
+void freeMem(){
+	free(idmap);	
+}
+/*
 int getPId(vid_t vid){
 	assert(vid < idmap.size());
 	return idmap[vid];
 }
-
 vid_t getNewId(int partid){
 	assert(partid < (int)vnumbers.size());
 	vid_t newid = 0;
@@ -171,22 +179,19 @@ vid_t getNewId(int partid){
 		if(i == partid){
 			lock.lock();
 			newid = vnumbers[i]++;	
-			//vnumbers[i]++;
 			lock.unlock();
 		}		
 	}
-	if(!(newid >= intv[partid*2] && newid <=intv[partid*2+1])){
-		std::cout<<"newid: "<<newid<<" start="<<intv[partid*2]<<" end="<<intv[partid*2+1]<<std::endl;
-		assert(newid >= intv[partid*2] && newid <=intv[partid*2+1]);
-	}
 	return newid;
 }
+*/
 
-struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
+struct ConvertProgram : public GraphChiProgram<VType, EType> {
    	bool converged;
 	bool interval_converged; 
+	mutex lock;
 	/*
-	std::vector<VertexDataType> degvector;
+	std::vector<VType> degvector;
 	std::vector<vid_t> idmap;
 	*/
     /**
@@ -215,18 +220,16 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
     /**
       * Pagerank update function.
 	  */
-	void update(graphchi_vertex<VertexDataType, EdgeDataType> &v, graphchi_context &ginfo) {
+	void update(graphchi_vertex<VType, EType> &v, graphchi_context &ginfo) {
 		//array[v.id()]++;		
-		if (ginfo.iteration == 0 && v.num_edges() > 0) {
-			int partid = getPId(v.id());	
-			vid_t newid = getNewId(partid); 	
+		if(v.num_edges() == 0)	return;
+		if (ginfo.iteration == 0) {
+			//int partid = getPId(v.id());	
+			vid_t newid = getNewId(v.id()); 	
 			v.set_data(newid);
-			lock.lock();
-			fprintf(fp_vmap, "%u\t%u\n", (int)v.id(), newid);
-			lock.unlock();
 			for(int i=0; i<v.num_edges(); i++){
-				graphchi_edge<EdgeDataType> * edge = v.edge(i);
-				EdgeDataType edata = edge->get_data();
+				graphchi_edge<EType> * edge = v.edge(i);
+				EType edata = edge->get_data();
 				edata.my_label(v.id(), edge->vertex_id()) = newid;
 				edge->set_data(edata);
 			}	
@@ -239,8 +242,8 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
 			if(v.num_outedges() > 0){	
 				vid_t mylabel = v.get_data();
 				for(int i=0; i<v.num_outedges(); i++){
-					graphchi_edge<EdgeDataType> * edge = v.outedge(i);
-					EdgeDataType edata = edge->get_data();
+					graphchi_edge<EType> * edge = v.outedge(i);
+					EType edata = edge->get_data();
 					vid_t nblabel = edata.nb_label(v.id(), edge->vertex_id());
 					//vid_t nb_id = edge->vertex_id();
 					assert(mylabel != nblabel);
@@ -264,46 +267,48 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
 
 
 int main(int argc, const char ** argv) {
-    graphchi_init(argc, argv);
-    metrics m("Metis2Edgelist");
+
+	//msbfsMain(argc, argv); 
+	//std::cout<<"===============================MSBFS has finished================================="<<std::endl;
 	
-	m.start_time("elapsed_time");
+    graphchi_init(argc, argv);
+    metrics m("WeightedDAGmsBFS-partitioning");
     global_logger().set_log_level(LOG_DEBUG);
 
     /* Parameters */
     std::string filename    = get_option_string("file"); // Base filename
     int niters              = get_option_int("niters", 100000);
-    scheduler          		= get_option_int("scheduler", false);;                    // Non-dynamic version of pagerank.
+    bool scheduler          = get_option_int("scheduler", false);;                    // Non-dynamic version of pagerank.
+	//std::string uwfilename  = get_option_string("file");//unweighed file name 
     //int ntop                = get_option_int("top", 50);
     //epsilon	 				= get_option_float("epsilon", 0.001);
-	pfilename   			= get_option_string("pfile");//path to the METIS output file
+	//pfilename   			= get_option_string("pfile");
 	//int execthreads		    = get_option_int("execthreads", 1);
 	//num_tasks_print			= get_option_int("print", false);
     /* Process input file - if not already preprocessed */
-    int nshards             = convert_if_notexists<EdgeDataType>(filename, get_option_string("nshards", "auto"));
+    int nshards             = convert_if_notexists<EType>(filename, get_option_string("nshards", "auto"));
 	assert(0 != nshards);
 	num_vertices = get_num_vertices(filename);
 	assert(num_vertices > 0);
-	
-	//initIdMap();
+
+	std::string orig_filename = filename.substr(0, filename.find("_weight")); 	
+	orig_filename += ".txt";
+	pfilename = orig_filename + ".dag.vmap";	
+	initIdMap();
 	//array = (int*)malloc(sizeof(int)*num_vertices);
 	//memset(array, 0, sizeof(int)*num_vertices);
 	//return 0;
     /* Run */
-    graphchi_engine<VertexDataType, EdgeDataType> engine(filename, nshards, scheduler, m); 
-	engine.set_exec_threads(1);
+    graphchi_engine<VType, EType> engine(filename, nshards, scheduler, m); 
+	//engine.set_exec_threads(1);
     //engine.set_modifies_inedges(false); // Improves I/O performance.
-   	fp_list = fopen((filename+".metis").c_str(), "w+");	 
-   	fp_vmap = fopen((filename+".metis.vmap").c_str(), "w+");	 
-	fprintf(fp_vmap, "old_vid\tnew_vid\n");
-   	fp_interval = fopen((filename+".metis.interval").c_str(), "w+");	 
-	assert(fp_interval != NULL);
-	initIdMap();
+   	fp_list = fopen((filename+".dag").c_str(), "w+");	 
    	//fp_vt = fopen((filename+".sd.vt").c_str(), "w+");	 
 	//assert(fp_list != NULL);
 	//assert(fp_vt != NULL);
 	//fprintf(fp_vt, "%new_vid, old_vid, degree\n");
-    bool inmemmode = false;//engine.num_vertices() * sizeof(EdgeDataType) < (size_t)engine.get_membudget_mb() * 1024L * 1024L;
+    bool inmemmode = false;//engine.num_vertices() * sizeof(EType) < (size_t)engine.get_membudget_mb() * 1024L * 1024L;
+	std::cout<<"===============================ReMap is started================================="<<std::endl;
     if (inmemmode) {
 		/*
         logstream(LOG_INFO) << "Running Pagerank by holding vertices in-memory mode!" << std::endl;
@@ -318,14 +323,9 @@ int main(int argc, const char ** argv) {
         engine.run(program, niters);
     }
    	fclose(fp_list); 
-   	fclose(fp_vmap); 
-	fclose(fp_interval);
 	//fclose(fp_vt);
 	//fp_vt = NULL;
 	fp_list = NULL;
-	for(int i=0; i<vnumbers.size(); i++){
-		std::cout<<i<<"-th  "<<vnumbers[i]<<std::endl;
-	}
     /* Output top ranked vertices */
 	/*
     std::vector< vertex_value<float> > top = get_top_vertices<float>(filename, ntop);
@@ -334,9 +334,29 @@ int main(int argc, const char ** argv) {
         std::cout << (i+1) << ". " << top[i].vertex << "\t" << top[i].value << std::endl;
     }
    	*/ 
-	
-	m.stop_time("elapsed_time", true);
+	freeMem();
+
+
     metrics_report(m);    
+	//copy unweighted file interval to weighted file
+	//std::cout<<"ouput interval file to dst"<<std::endl;
+	FILE* srcfp_interval = fopen((orig_filename+".dag.interval").c_str(), "r");
+	assert(srcfp_interval != NULL);
+	FILE* dstfp_interval = fopen((filename+".dag.interval").c_str(), "w+");
+	assert(dstfp_interval != NULL);
+	char tmp[1024];
+	std::cout<<"output file is "<<filename+".dag.interval"<<std::endl;
+
+	while(int bytes = read(srcfp_interval, tmp, 1024) > 0){	
+		std::cout<<tmp<<std::endl;		
+		write(tmp, sizeof(char), bytes, dstfp_interval);	
+		std::cout<<bytes<<" has read"<<std::endl;
+	}
+	fclose(srcfp_interval);
+	fclose(dstfp_interval);
+	
+	//std::cout<<"end ouput interval file to dst"<<std::endl;
+    //metrics_report(m);    
 	/*
 	size_t total_updates = 0;
 	for(int i=0; i<num_vertices; i++){

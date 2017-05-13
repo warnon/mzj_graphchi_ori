@@ -50,6 +50,7 @@ struct VertexInfo{
 struct EdgeInfo{
 	vid_t largelabel;
 	vid_t smalllabel;   
+	float weight;
 	vid_t& my_label(vid_t myid, vid_t nbid){
 		if(myid < nbid) return smalllabel;	
 		else return largelabel;
@@ -63,6 +64,15 @@ struct EdgeInfo{
 	}
 };
 
+typedef vid_t VType;
+typedef EdgeInfo EType;
+
+bool flag_weight = false;
+//static void VARIABLE_IS_NOT_USED parse<EdgeDataType>(EdgeDataType& edata, const char* s){
+static void  parse(EdgeInfo& edata, const char* s){
+	if(!flag_weight) flag_weight = true;
+	edata.weight = atof(s);	
+}
 /*
 bool sortFunc(const VertexInfo& v1, const VertexInfo& v2){
 	if(v1.deg < v2.deg){
@@ -75,8 +85,6 @@ bool sortFunc(const VertexInfo& v1, const VertexInfo& v2){
 	}	
 }
 */
-typedef vid_t VType;
-typedef EdgeInfo EType;
 
 //mutex lock;
 FILE* fp_list = NULL;
@@ -236,9 +244,15 @@ struct ConvertProgram : public GraphChiProgram<VType, EType> {
 					vid_t nblabel = edata.nb_label(v.id(), edge->vertex_id());
 					//vid_t nb_id = edge->vertex_id();
 					assert(mylabel != nblabel);
-					lock.lock();
-					fprintf(fp_list, "%u\t%u\n", mylabel, nblabel);		
-					lock.unlock();
+					if(!flag_weight){
+						lock.lock();
+						fprintf(fp_list, "%u\t%u\n", mylabel, nblabel);		
+						lock.unlock();
+					}else{
+						lock.lock();
+						fprintf(fp_list, "%u\t%u\t%.3f\n", mylabel, nblabel, edata.weight);		
+						lock.unlock();
+					}
 					//edge->set_data(edata);	
 				}
 			}/*else{
@@ -251,12 +265,16 @@ struct ConvertProgram : public GraphChiProgram<VType, EType> {
 
 int main(int argc, const char ** argv) {
 
+    graphchi_init(argc, argv);
+    metrics m("DAGmsBFS-partitioning");
+	m.start_time("elapsed_time");
+    global_logger().set_log_level(LOG_DEBUG);
+
+
+	
 	msbfsMain(argc, argv); 
 	std::cout<<"===============================MSBFS has finished================================="<<std::endl;
 	
-    graphchi_init(argc, argv);
-    metrics m("DAGmsBFS-partitioning");
-    global_logger().set_log_level(LOG_DEBUG);
 
     /* Parameters */
     std::string filename    = get_option_string("file"); // Base filename
@@ -273,7 +291,7 @@ int main(int argc, const char ** argv) {
 	num_vertices = get_num_vertices(filename);
 	assert(num_vertices > 0);
 	
-	pfilename = filename + ".vmap";	
+	pfilename = filename + ".dag.vmap";	
 	initIdMap();
 	//array = (int*)malloc(sizeof(int)*num_vertices);
 	//memset(array, 0, sizeof(int)*num_vertices);
@@ -315,6 +333,7 @@ int main(int argc, const char ** argv) {
     }
    	*/ 
 	freeMem();
+	m.stop_time("elapsed_time", true);
     metrics_report(m);    
 	/*
 	size_t total_updates = 0;

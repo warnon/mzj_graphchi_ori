@@ -31,8 +31,6 @@
 #include <fstream>
 #include <cmath>
 
-#include <set>
-
 #define GRAPHCHI_DISABLE_COMPRESSION
 
 
@@ -98,7 +96,6 @@ bool flag = false;//denote whether the smallest vid is 0 or 1
 struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
    	bool converged;
 	bool interval_converged; 
-	std::set<vid_t> nbs;
 	/*
 	std::vector<VertexDataType> degvector;
 	std::vector<vid_t> idmap;
@@ -140,29 +137,23 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
 	  */
 	void update(graphchi_vertex<VertexDataType, EdgeDataType> &v, graphchi_context &ginfo) {
 		//array[v.id()]++;		
-		if (ginfo.iteration == 0 && v.num_edges() > 0) {
-			
-			nbs.clear();
-			for(int i=0; i<v.num_edges(); i++){
-				nbs.insert(v.edge(i)->vertex_id());	
-			}
-			num_edges += nbs.size(); 
-			/*
+		if (ginfo.iteration == 0) {
 			if(v.num_inedges() > 0){
 				//lock.lock();
 				num_edges += v.num_inedges();
 				//lock.unlock();
+				/*
+				if(v.id() == 0){
+					flag = true;	
+				}
+				*/
 			}
-			*/
 		} else if(ginfo.iteration == 1){
 			if(v.id() == 0){
-				fprintf(fp_metis, "%u %u\n", num_vertices, num_edges/2);	
+				fprintf(fp_metis, "%u %u\n", num_vertices, num_edges);	
 			}
 			if(v.num_edges() > 0){	
-				nbs.clear();
 				for(int i=0; i<v.num_edges(); i++){
-					nbs.insert(v.edge(i)->vertex_id());	
-					/*
 					graphchi_edge<EdgeDataType> * edge = v.edge(i);
 					//EdgeDataType edata = edge->get_data();
 					vid_t nb_id = edge->vertex_id();
@@ -170,11 +161,6 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
 					fprintf(fp_metis, "%u ", nb_id+1);		
 					//lock.unlock();
 					//edge->set_data(edata);	
-					*/
-				}
-				std::set<vid_t>::iterator it;
-				for(it = nbs.begin(); it != nbs.end(); it++){
-					fprintf(fp_metis, "%u ", (*it)+1);		
 				}
 				fprintf(fp_metis, "\n");
 			}else{
@@ -187,7 +173,6 @@ struct ConvertProgram : public GraphChiProgram<VertexDataType, EdgeDataType> {
 int main(int argc, const char ** argv) {
     graphchi_init(argc, argv);
     metrics m("convert2Metis");
-	m.start_time("elapsed_time");
     global_logger().set_log_level(LOG_DEBUG);
 
     /* Parameters */
@@ -209,7 +194,7 @@ int main(int argc, const char ** argv) {
     graphchi_engine<VertexDataType, EdgeDataType> engine(filename, nshards, scheduler, m); 
 	engine.set_exec_threads(1);
     //engine.set_modifies_inedges(false); // Improves I/O performance.
-   	fp_metis = fopen((filename+".metisadj").c_str(), "w+");	 
+   	fp_metis = fopen((filename+".metis").c_str(), "w+");	 
    	//fp_vt = fopen((filename+".sd.vt").c_str(), "w+");	 
 	assert(fp_metis != NULL);
 	//assert(fp_vt != NULL);
@@ -240,7 +225,6 @@ int main(int argc, const char ** argv) {
         std::cout << (i+1) << ". " << top[i].vertex << "\t" << top[i].value << std::endl;
     }
    	*/ 
-	m.stop_time("elapsed_time", true);
     metrics_report(m);    
 	/*
 	size_t total_updates = 0;
